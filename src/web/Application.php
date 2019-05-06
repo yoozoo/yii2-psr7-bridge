@@ -1,18 +1,13 @@
-<?php declare(strict_types=1);
+<?php declare (strict_types = 1);
 
 namespace yii\Psr7\web;
 
-use yii\Psr7\web\Response;
-use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\ResponseInterface;
-
-use Psr\Http\Server\MiddlewareInterface;
+use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-
-use yii\base\Component;
 use Yii;
-
-use ReflectionMethod;
+use yii\base\Component;
+use yii\Psr7\web\Response;
 
 /**
  * A Yii2 compatible A PSR-15 RequestHandlerInterface Application component
@@ -35,6 +30,11 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
      * @var int $memoryLimit
      */
     private $memoryLimit;
+
+    /**
+     * @var bool $fisrtFlag
+     */
+    private $fisrtFlag = true;
 
     /**
      * Overloaded constructor to persist configuration
@@ -67,7 +67,41 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
 
         $config['components']['request']['psr7Request'] = $request;
 
-        $this->state = self::STATE_BEGIN;
+        $this->preInit($config);
+        $this->registerErrorHandler($config);
+        Component::__construct($config);
+
+        // Session data has to be explicitly loaded before any bootstrapping occurs to ensure compatability
+        // with bootstrapped components (such as yii2-debug).
+        if (($session = $this->getSession()) !== null) {
+            // Close the session if it was open.
+            $session->close();
+
+            // If a session cookie is defined, load it into Yii::$app->session
+            if (isset($request->getCookieParams()[$session->getName()])) {
+                $session->setId($request->getCookieParams()[$session->getName()]);
+            }
+        }
+
+        // Open the session before any modules that need it are bootstrapped.
+        // $session->open();
+        // $this->bootstrap();
+
+        // // Once bootstrapping is done we can close the session.
+        // // Accessing it in the future will re-open it.
+        // $session->close();
+    }
+
+    /**
+     * Registers all components with the original configuration
+     * @return void
+     */
+    protected function initSet(ServerRequestInterface $request)
+    {
+        $config = $this->config;
+
+        $config['components']['request']['psr7Request'] = $request;
+
         $this->preInit($config);
         $this->registerErrorHandler($config);
         Component::__construct($config);
@@ -91,7 +125,24 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
         // Once bootstrapping is done we can close the session.
         // Accessing it in the future will re-open it.
         $session->close();
+    }
 
+    /**
+     * {@inheritdoc}
+     */
+    protected function registerErrorHandler(&$config)
+    {
+        if (YII_ENABLE_ERROR_HANDLER) {
+            if (!isset($config['components']['errorHandler']['class'])) {
+                echo "Error: no errorHandler component is configured.\n";
+                exit(1);
+            }
+            if (!$this->has('errorHandler')) {
+                $this->set('errorHandler', $config['components']['errorHandler']);
+                $this->getErrorHandler()->register();
+            }
+            unset($config['components']['errorHandler']);
+        }
     }
 
     /**
@@ -103,26 +154,21 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
     }
 
     /**
-     * {@inheritdoc}
-     */
-    protected function bootstrap()
-    {
-        // Call the bootstrap method in \yii\base\Application instead of \yii\web\Application
-        $method = new ReflectionMethod(get_parent_class(get_parent_class($this)), 'bootstrap');
-        $method->setAccessible(true);
-        $method->invoke($this);
-    }
-
-    /**
      * PSR-15 RequestHandlerInterface
      *
      * @param ServerRequestInterface $request
      * @return ResponseInterface
      */
-    public function handle(ServerRequestInterface $request) : ResponseInterface
+    public function handle(ServerRequestInterface $request): ResponseInterface
     {
         try {
-            $this->reset($request);
+            $this->state = self::STATE_BEGIN;
+            if ($this->fisrtFlag) {
+                $this->initSet($request);
+                $this->fisrtFlag = false;
+            } else {
+                $this->reset($request);
+            }
             $this->state = self::STATE_BEFORE_REQUEST;
             $this->trigger(self::EVENT_BEFORE_REQUEST);
 
@@ -150,7 +196,7 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
      * @param ResponseInterface $response
      * @return ResponseInterface
      */
-    protected function terminate(ResponseInterface $response) : ResponseInterface
+    protected function terminate(ResponseInterface $response): ResponseInterface
     {
         // Final flush of Yii2's logger to ensure log data is written at the end of the request
         // and to ensure Yii2 Debug populates correctly
@@ -160,7 +206,7 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
 
         // Close all instances of \yii\db\Connection
         foreach ($this->getComponents(false) as $id => $component) {
-            if ($component instanceOf \yii\db\Connection) {
+            if ($component instanceof \yii\db\Connection) {
                 $component->close();
             }
         }
@@ -185,7 +231,7 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
      * @param \Throwable|\Exception $exception
      * @return ResponseInterface
      */
-    private function handleError(\Throwable $exception) : ResponseInterface
+    private function handleError(\Throwable $exception): ResponseInterface
     {
         $response = $this->getErrorHandler()->handleException($exception);
 
@@ -219,9 +265,14 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
      *
      * @return boolean
      */
-    public function clean()
+    public function clean($limit)
     {
         gc_collect_cycles();
+        if (!isset($limit)) {
+            $limit = $this->getMemoryLimit() * .90;
+        } else {
+            $limit = $limit * 1024;
+        }
         $limit = $this->getMemoryLimit();
         $bound = $limit * .90;
         $usage = memory_get_usage(true);
@@ -237,10 +288,10 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
      *
      * @return int
      */
-    private function getMemoryLimit() : int
+    private function getMemoryLimit()
     {
         if (!$this->memoryLimit) {
-            $limit  = ini_get('memory_limit');
+            $limit = ini_get('memory_limit');
             sscanf($limit, '%u%c', $number, $suffix);
             if (isset($suffix)) {
                 $number = $number * pow(1024, strpos(' KMG', strtoupper($suffix)));
@@ -249,6 +300,6 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
             $this->memoryLimit = $number;
         }
 
-        return (int)$this->memoryLimit;
+        return (int) $this->memoryLimit;
     }
 }
