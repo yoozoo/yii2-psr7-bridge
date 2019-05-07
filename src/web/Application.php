@@ -269,7 +269,7 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
     {
         gc_collect_cycles();
         if (!isset($limit)) {
-            $limit = $this->getMemoryLimit() * .90;
+            $limit = $this->getMemoryLimit();
         } else {
             $limit = $limit * 1024;
         }
