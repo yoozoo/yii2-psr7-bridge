@@ -58,7 +58,65 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
     }
 
     /**
-     * Re-registers all components with the original configuration
+     * init all global vars
+     * @return void
+     */
+    private function initGlobal(ServerRequestInterface $request)
+    {
+        foreach ($request->getServerParams() as $k => $v) {
+            $_SERVER[$k] = $v;
+        }
+        foreach ($request->getUploadedFiles() as $k=>$v) {
+            $_FILES[$k] = $v;
+        }
+
+        $order = ini_get('request_order');
+        if (empty($order)) {
+            $order = ini_get('variables_order');
+        }
+        if (empty($order)) {
+            $order = 'EGPCS';
+        }
+        $order = \str_split(ini_get('variables_order'), 1);
+
+        foreach ($order as $c) {
+            switch ($c) {
+                case 'E':
+                    foreach (\getenv() as $k => $v) {
+                        $_REQUEST[$k] = $v;
+                    }
+                    break;
+                case 'G':
+                    foreach ($request->getQueryParams() as $k => $v) {
+                        $_GET[$k] = $v;
+                        $_REQUEST[$k] = $v;
+                    }
+                    break;
+                case 'P':
+                    $body = $request->getParsedBody();
+                    if (is_array($body)) {
+                        foreach ($body as $k => $v) {
+                            $_POST[$k] = $v;
+                            $_REQUEST[$k] = $v;
+                        }
+                    }
+                    break;
+                case 'C':
+                    foreach ($request->getCookieParams() as $k => $v) {
+                        $_COOKIE[$k] = $v;
+                        $_REQUEST[$k] = $v;
+                    }
+                    break;
+                case 'S':
+                    //TODO
+                    // ignore sessions
+                    break;
+            }
+        }
+    }
+
+    /**
+     * Registers all components with the original configuration
      * @return void
      */
     protected function reset(ServerRequestInterface $request)
@@ -82,49 +140,19 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
                 $session->setId($request->getCookieParams()[$session->getName()]);
             }
         }
+        $this->initGlobal($request);
 
-        // Open the session before any modules that need it are bootstrapped.
-        // $session->open();
-        // $this->bootstrap();
+        if ($this->fisrtFlag) {
 
-        // // Once bootstrapping is done we can close the session.
-        // // Accessing it in the future will re-open it.
-        // $session->close();
-    }
+            // Open the session before any modules that need it are bootstrapped.
+            $session->open();
+            $this->bootstrap();
 
-    /**
-     * Registers all components with the original configuration
-     * @return void
-     */
-    protected function initSet(ServerRequestInterface $request)
-    {
-        $config = $this->config;
-
-        $config['components']['request']['psr7Request'] = $request;
-
-        $this->preInit($config);
-        $this->registerErrorHandler($config);
-        Component::__construct($config);
-
-        // Session data has to be explicitly loaded before any bootstrapping occurs to ensure compatability
-        // with bootstrapped components (such as yii2-debug).
-        if (($session = $this->getSession()) !== null) {
-            // Close the session if it was open.
+            // Once bootstrapping is done we can close the session.
+            // Accessing it in the future will re-open it.
             $session->close();
-
-            // If a session cookie is defined, load it into Yii::$app->session
-            if (isset($request->getCookieParams()[$session->getName()])) {
-                $session->setId($request->getCookieParams()[$session->getName()]);
-            }
+            $this->fisrtFlag = false;
         }
-
-        // Open the session before any modules that need it are bootstrapped.
-        $session->open();
-        $this->bootstrap();
-
-        // Once bootstrapping is done we can close the session.
-        // Accessing it in the future will re-open it.
-        $session->close();
     }
 
     /**
@@ -163,12 +191,8 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
     {
         try {
             $this->state = self::STATE_BEGIN;
-            if ($this->fisrtFlag) {
-                $this->initSet($request);
-                $this->fisrtFlag = false;
-            } else {
-                $this->reset($request);
-            }
+            $this->reset($request);
+
             $this->state = self::STATE_BEFORE_REQUEST;
             $this->trigger(self::EVENT_BEFORE_REQUEST);
 
@@ -220,6 +244,9 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
         $r->off(Response::EVENT_AFTER_PREPARE);
         $r->off(Response::EVENT_AFTER_SEND);
         $r->off(Response::EVENT_BEFORE_SEND);
+
+        // reset global variables
+        unset($GLOBALS['_SERVER'], $GLOBALS['_GET'], $GLOBALS['_POST'], $GLOBALS['_COOKIE'], $GLOBALS['_ENV'], $GLOBALS['_REQUEST'], $GLOBALS['_FILES']);
 
         // Return the parent response
         return $response;
