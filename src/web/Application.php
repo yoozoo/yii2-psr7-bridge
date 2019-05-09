@@ -265,7 +265,7 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
      *
      * @return boolean
      */
-    public function clean($limit)
+    public function clean($limit = 20)
     {
         gc_collect_cycles();
         if (!isset($limit)) {
