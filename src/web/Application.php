@@ -63,6 +63,7 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
      */
     private function initGlobal(ServerRequestInterface $request)
     {
+        $GLOBALS['_SERVER'] = $GLOBALS['_GET'] = $GLOBALS['_POST'] = $GLOBALS['_COOKIE'] = $GLOBALS['_ENV'] = $GLOBALS['_REQUEST'] = $GLOBALS['_FILES'] = [];
         foreach ($request->getServerParams() as $k => $v) {
             $_SERVER[$k] = $v;
         }
@@ -182,6 +183,15 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
     }
 
     /**
+     * {@inheritdoc}
+     */
+    public function end($status = 0, $response = null)
+    {
+        $response = $response ?: $this->getResponse();
+        throw new EndException($response->getPsr7Response());
+    }
+
+    /**
      * PSR-15 RequestHandlerInterface
      *
      * @param ServerRequestInterface $request
@@ -198,13 +208,18 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
 
             $this->state = self::STATE_HANDLING_REQUEST;
 
-            $response = $this->handleRequest($this->getRequest());
+            try{
+                $response = $this->handleRequest($this->getRequest());
+                $psr7Response = $response->getPsr7Response();
+            } catch (EndException $e) {
+                $psr7Response = $e->getResponse();
+            }
 
             $this->state = self::STATE_AFTER_REQUEST;
             $this->trigger(self::EVENT_AFTER_REQUEST);
 
             $this->state = self::STATE_END;
-            return $this->terminate($response->getPsr7Response());
+            return $this->terminate($psr7Response);
         } catch (\Exception $e) {
             return $this->terminate($this->handleError($e));
         } catch (\Throwable $e) {
