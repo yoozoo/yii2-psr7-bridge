@@ -1,9 +1,9 @@
-<?php declare(strict_types=1);
+<?php declare (strict_types = 1);
 
 namespace yii\Psr7\web;
 
-use \Exception;
 use Psr\Http\Message\ResponseInterface;
+use \Exception;
 
 class EndException extends Exception
 {
@@ -18,7 +18,8 @@ class EndException extends Exception
      *
      * @param ResponseInterface $response
      */
-    public function __construct(ResponseInterface $response = null) {
+    public function __construct(ResponseInterface $response = null)
+    {
         parent::__construct();
         $this->response = $response;
     }
@@ -31,8 +32,8 @@ class EndException extends Exception
     public function getResponse(): ResponseInterface
     {
         $response = $this->response;
-        if ($response === NULL) {
-            $response = new \Zend\Diactoros\Response(); 
+        if ($response === null) {
+            $response = new \Zend\Diactoros\Response();
         }
         return $response;
     }
