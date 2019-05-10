@@ -67,7 +67,7 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
         foreach ($request->getServerParams() as $k => $v) {
             $_SERVER[$k] = $v;
         }
-        foreach ($request->getUploadedFiles() as $k=>$v) {
+        foreach ($request->getUploadedFiles() as $k => $v) {
             $_FILES[$k] = $v;
         }
 
@@ -78,12 +78,13 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
         if (empty($order)) {
             $order = 'EGPCS';
         }
-        $order = \str_split(ini_get('variables_order'), 1);
+        $order = \str_split($order, 1);
 
         foreach ($order as $c) {
             switch ($c) {
                 case 'E':
                     foreach (\getenv() as $k => $v) {
+                        $_ENV[$k] = $v;
                         $_REQUEST[$k] = $v;
                     }
                     break;
@@ -208,7 +209,7 @@ class Application extends \yii\web\Application implements RequestHandlerInterfac
 
             $this->state = self::STATE_HANDLING_REQUEST;
 
-            try{
+            try {
                 $response = $this->handleRequest($this->getRequest());
                 $psr7Response = $response->getPsr7Response();
             } catch (EndException $e) {
